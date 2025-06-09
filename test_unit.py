@@ -495,14 +495,25 @@ class TestIntegration(unittest.TestCase):
         
         # Test k-mer distance calculation
         kmer_calc = KmerDistanceCalculator(k=10)
-        fastq_files = metadata['fastq_file'].tolist()
         
-        distance_matrix, sample_names = kmer_calc.calculate_distance_matrix(
-            fastq_files, 
-            metric='braycurtis',
-            max_reads=500
+        # Prepare sample files dictionary
+        sample_files = {}
+        for _, row in metadata.iterrows():
+            sample_files[row['sample_id']] = row['fastq_file']
+        
+        # Calculate k-mer profiles
+        profiles = kmer_calc.calculate_profiles(
+            sample_files,
+            max_reads_per_sample=500
         )
         
+        # Calculate distance matrix
+        distance_matrix = kmer_calc.calculate_distance_matrix(
+            profiles,
+            metric='braycurtis'
+        )
+        
+        sample_names = list(profiles.keys())
         self.assertEqual(distance_matrix.shape, (6, 6))
         self.assertEqual(len(sample_names), 6)
         
