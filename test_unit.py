@@ -502,18 +502,16 @@ class TestIntegration(unittest.TestCase):
             sample_files[row['sample_id']] = row['fastq_file']
         
         # Calculate k-mer profiles
-        profiles = kmer_calc.calculate_profiles(
+        profiles = kmer_calc.calculate_kmer_profiles(
             sample_files,
             max_reads_per_sample=500
         )
         
         # Calculate distance matrix
-        distance_matrix = kmer_calc.calculate_distance_matrix(
+        distance_matrix, sample_names = kmer_calc.calculate_distance_matrix(
             profiles,
             metric='braycurtis'
         )
-        
-        sample_names = list(profiles.keys())
         self.assertEqual(distance_matrix.shape, (6, 6))
         self.assertEqual(len(sample_names), 6)
         

@@ -410,18 +410,16 @@ class AssemblyOptimizationTester:
                     sample_files[row['sample_id']] = row['fastq_file']
                 
                 # Calculate k-mer profiles
-                profiles = kmer_calc.calculate_profiles(
+                profiles = kmer_calc.calculate_kmer_profiles(
                     sample_files, 
                     max_reads_per_sample=1000  # Small for speed
                 )
                 
                 # Calculate distance matrix
-                distance_matrix = kmer_calc.calculate_distance_matrix(
+                distance_matrix, sample_names = kmer_calc.calculate_distance_matrix(
                     profiles, 
                     metric='braycurtis'
                 )
-                
-                sample_names = list(profiles.keys())
                 distance_df = pd.DataFrame(distance_matrix, index=sample_names, columns=sample_names)
                 
             else:
