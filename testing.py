@@ -403,14 +403,25 @@ class AssemblyOptimizationTester:
             if dataset.name == "mock_community":
                 # Calculate real k-mer distances
                 kmer_calc = KmerDistanceCalculator(k=15)
-                fastq_files = metadata['fastq_file'].tolist()
                 
-                distance_matrix, sample_names = kmer_calc.calculate_distance_matrix(
-                    fastq_files, 
-                    metric='braycurtis',
-                    max_reads=1000  # Small for speed
+                # Prepare sample files dictionary
+                sample_files = {}
+                for _, row in metadata.iterrows():
+                    sample_files[row['sample_id']] = row['fastq_file']
+                
+                # Calculate k-mer profiles
+                profiles = kmer_calc.calculate_profiles(
+                    sample_files, 
+                    max_reads_per_sample=1000  # Small for speed
                 )
                 
+                # Calculate distance matrix
+                distance_matrix = kmer_calc.calculate_distance_matrix(
+                    profiles, 
+                    metric='braycurtis'
+                )
+                
+                sample_names = list(profiles.keys())
                 distance_df = pd.DataFrame(distance_matrix, index=sample_names, columns=sample_names)
                 
             else:
