@@ -406,7 +406,8 @@ class KmerNormalizer:
             sample_depths = sample_depths.values
             
         # Check for depth heterogeneity
-        depth_cv = np.std(sample_depths) / np.mean(sample_depths)
+        mean_depth = np.mean(sample_depths)
+        depth_cv = np.std(sample_depths) / (mean_depth + 1e-10) if mean_depth > 0 else 0
         if depth_cv > 0.5:
             logger.warning(f"High sequencing depth heterogeneity detected (CV={depth_cv:.2f})")
             
@@ -497,6 +498,10 @@ class KmerNormalizer:
         from scipy.stats import pearsonr
         from scipy.spatial.distance import pdist, squareform
         
+        # Need at least 3 samples for meaningful correlation test
+        if len(sample_depths) < 3:
+            return
+        
         # Calculate pairwise similarities (using Bray-Curtis)
         distances = pdist(normalized_counts, metric='braycurtis')
         similarities = 1 - distances
@@ -505,15 +510,16 @@ class KmerNormalizer:
         depth_matrix = np.abs(sample_depths[:, np.newaxis] - sample_depths[np.newaxis, :])
         depth_diffs = squareform(depth_matrix, checks=False)
         
-        # Test correlation
-        correlation, p_value = pearsonr(similarities, -depth_diffs)  # Negative because larger diff = less similarity
-        
-        if p_value < 0.05:
-            logger.warning(f"Sample similarity correlates with sequencing depth "
-                          f"(r={correlation:.3f}, p={p_value:.3f})")
-        else:
-            logger.info(f"No significant depth-similarity correlation detected "
-                       f"(r={correlation:.3f}, p={p_value:.3f})")
+        # Test correlation (need at least 2 data points)
+        if len(similarities) >= 2:
+            correlation, p_value = pearsonr(similarities, -depth_diffs)  # Negative because larger diff = less similarity
+            
+            if p_value < 0.05:
+                logger.warning(f"Sample similarity correlates with sequencing depth "
+                              f"(r={correlation:.3f}, p={p_value:.3f})")
+            else:
+                logger.info(f"No significant depth-similarity correlation detected "
+                           f"(r={correlation:.3f}, p={p_value:.3f})")
     
     def detect_depth_heterogeneity(self, count_matrix: Union[np.ndarray, pd.DataFrame]) -> Dict[str, float]:
         """Detect and report varying sequencing depths across samples.
@@ -536,7 +542,7 @@ class KmerNormalizer:
             'max_depth': float(np.max(sample_depths)),
             'median_depth': float(np.median(sample_depths)),
             'mean_depth': float(np.mean(sample_depths)),
-            'depth_cv': float(np.std(sample_depths) / np.mean(sample_depths)),
+            'depth_cv': float(np.std(sample_depths) / (np.mean(sample_depths) + 1e-10)),
             'depth_range_ratio': float(np.max(sample_depths) / np.min(sample_depths[sample_depths > 0])),
             'samples_below_1000': int(np.sum(sample_depths < 1000)),
             'samples_above_100k': int(np.sum(sample_depths > 100000))

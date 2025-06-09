@@ -1,0 +1,8 @@
+sample_id,fastq_file,sample_type,sequencing_depth,description,condition,diet,age_group,sex,bmi_category,batch
+healthy_01,test_fastq_files/healthy_01.fastq.gz,healthy,5000,Synthetic gut microbiome sample - healthy 01,healthy,balanced,middle_age,M,normal,batch_2
+healthy_02,test_fastq_files/healthy_02.fastq.gz,healthy,5000,Synthetic gut microbiome sample - healthy 02,healthy,balanced,middle_age,M,normal,batch_1
+healthy_03,test_fastq_files/healthy_03.fastq.gz,healthy,5000,Synthetic gut microbiome sample - healthy 03,healthy,balanced,young_adult,F,normal,batch_2
+dysbiotic_01,test_fastq_files/dysbiotic_01.fastq.gz,dysbiotic,5000,Synthetic gut microbiome sample - dysbiotic 01,dysbiotic,western,middle_age,F,obese,batch_1
+dysbiotic_02,test_fastq_files/dysbiotic_02.fastq.gz,dysbiotic,5000,Synthetic gut microbiome sample - dysbiotic 02,dysbiotic,western,elderly,F,overweight,batch_2
+high_fiber_01,test_fastq_files/high_fiber_01.fastq.gz,high,5000,Synthetic gut microbiome sample - high fiber 01,healthy,high_fiber,young_adult,M,normal,batch_1
+high_fiber_02,test_fastq_files/high_fiber_02.fastq.gz,high,5000,Synthetic gut microbiome sample - high fiber 02,healthy,high_fiber,middle_age,F,normal,batch_2

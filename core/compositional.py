@@ -158,7 +158,7 @@ class CompositionalDataHandler:
         
         # Apply ILR transformation
         log_proportions = np.log(proportions)
-        ilr_transformed = log_proportions @ helmert_matrix.T
+        ilr_transformed = log_proportions @ helmert_matrix
         
         logger.info(f"ILR transformation applied")
         
@@ -194,9 +194,12 @@ class CompositionalDataHandler:
         helmert = np.zeros((n_features, n_features - 1))
         
         for i in range(n_features - 1):
-            # Create i-th row of Helmert matrix
-            helmert[i+1:, i] = -1 / np.sqrt(i * (i + 2))
-            helmert[i, i] = np.sqrt((i + 1) / (i + 2))
+            # Standard Helmert matrix construction
+            # Set first i+1 elements to sqrt(1/(i+1)/(i+2))
+            helmert[:i+1, i] = 1.0 / np.sqrt((i + 1) * (i + 2))
+            # Set the (i+1)th element to -sqrt((i+1)/(i+2))
+            if i + 1 < n_features:
+                helmert[i + 1, i] = -np.sqrt((i + 1) / (i + 2))
             
         return helmert
     
@@ -327,7 +330,11 @@ class CompositionalDataHandler:
         original_var = np.var(original_data, axis=0)
         transformed_var = np.var(transformed_data, axis=0)
         
-        metrics['variance_ratio'] = np.mean(transformed_var) / np.mean(original_var)
+        mean_original_var = np.mean(original_var)
+        if mean_original_var > 0:
+            metrics['variance_ratio'] = np.mean(transformed_var) / mean_original_var
+        else:
+            metrics['variance_ratio'] = 1.0
         
         # Check for outliers in transformed space
         z_scores = np.abs(stats.zscore(transformed_data, axis=0))
@@ -336,9 +343,14 @@ class CompositionalDataHandler:
         
         # Calculate effective dimensionality
         eigenvals = np.linalg.eigvals(np.cov(transformed_data.T))
-        eigenvals = eigenvals[eigenvals > 0]
-        effective_dim = np.exp(stats.entropy(eigenvals / np.sum(eigenvals)))
-        metrics['effective_dimensionality'] = float(effective_dim)
+        # Take only real, positive eigenvalues
+        eigenvals = np.real(eigenvals[np.real(eigenvals) > 0])
+        if len(eigenvals) > 0:
+            normalized_eigenvals = eigenvals / np.sum(eigenvals)
+            effective_dim = np.exp(stats.entropy(normalized_eigenvals))
+            metrics['effective_dimensionality'] = float(effective_dim)
+        else:
+            metrics['effective_dimensionality'] = 0.0
         
         return metrics
     

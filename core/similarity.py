@@ -342,11 +342,12 @@ class BiasAwareSimilarity:
             weights = np.mean(data, axis=0)
             
         elif method == 'information_content':
-            # Weight by information content (inverse of entropy)
+            # Weight by information content (inverse of entropy per feature)
             rel_data = data / (np.sum(data, axis=1, keepdims=True) + 1e-10)
             mean_rel = np.mean(rel_data, axis=0)
-            entropy = -np.sum(mean_rel * np.log(mean_rel + 1e-10))
-            weights = 1.0 / (entropy + 1e-10)
+            # Calculate entropy for each feature
+            entropy_per_feature = -mean_rel * np.log(mean_rel + 1e-10)
+            weights = 1.0 / (entropy_per_feature + 1e-10)
             
         else:
             raise ValueError(f"Unknown weighting method: {method}")
