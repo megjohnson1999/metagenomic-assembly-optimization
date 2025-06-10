@@ -31,10 +31,30 @@ This guide provides a structured decision-making process to help researchers cho
    - **Unknown/exploratory** → Use conservative, robust approaches
 
 3. **PCR amplification bias risk assessment:**
-   - **High risk**: VLP preparations, low biomass samples, environmental DNA, ancient DNA
-   - **Medium risk**: Host-associated samples with low microbial load
-   - **Low risk**: High biomass samples (fecal, soil), minimal PCR cycles used
-   - **Unknown**: Check FastQC duplication rates and GC distribution
+   **Note**: PCR bias is primarily a sequencing protocol issue, but certain sample types force bias-inducing protocols
+   
+   - **High risk**: Sample types requiring extensive PCR amplification due to low DNA yield
+     - VLP preparations (very low starting material)
+     - Environmental DNA from sparse environments
+     - Ancient DNA (degraded/trace amounts)
+     - Single-cell or low-biomass samples
+   
+   - **Medium risk**: Samples with moderate DNA yield requiring moderate amplification
+     - Host-associated samples with low microbial load
+     - Filtered water samples
+     - Biofilm or surface swabs
+   
+   - **Low risk**: High-yield samples allowing minimal PCR cycles
+     - Fecal samples (high microbial biomass)
+     - Rich soil or sediment samples
+     - Cultured microbial communities
+   
+   - **Protocol-dependent**: Ask your sequencing facility
+     - How many PCR cycles were used? (>25 cycles = higher bias risk)
+     - Was MDA or other bias-reducing methods used?
+     - Were unique molecular identifiers (UMIs) included?
+   
+   - **Unknown**: Check FastQC duplication rates and GC distribution for bias indicators
 
 ### STEP 2: Data Quality and Preprocessing
 
@@ -70,15 +90,29 @@ kraken2 --db standard sample.fastq --unclassified-out sample_microbial.fastq
 
 **First, assess for PCR amplification bias:**
 ```bash
-# Check for potential PCR bias indicators
+# Check for potential PCR bias indicators in sequencing data
 fastqc *.fastq* -o qc_reports/
-# Look for: unusual GC distribution, high duplication rates, uneven coverage
+# Look for: unusual GC distribution, high duplication rates (>50%), uneven coverage
 
-# For VLP/viral data, PCR bias is common due to low starting material
+# Check your lab protocol information:
+echo "PCR cycles used: [ask sequencing facility]"
+echo "Starting DNA concentration: [check lab notes]"
+echo "Library prep method: [standard PCR vs MDA vs UMI-based]"
 ```
 
+**Understanding Your Bias Risk:**
+- **Protocol-based assessment** (most accurate):
+  - >25 PCR cycles = High bias risk
+  - 20-25 cycles = Medium risk  
+  - <20 cycles = Low risk
+  - MDA or UMI-based = Reduced bias
+
+- **Sample-type based assessment** (when protocol unknown):
+  - Low starting DNA yield → Many cycles needed → Higher bias risk
+  - High starting DNA yield → Fewer cycles needed → Lower bias risk
+
 **Important PCR Bias Considerations:**
-- **If PCR bias is suspected or known** (e.g., VLP preparations, low biomass samples):
+- **If PCR bias is suspected or known** (>25 cycles, low biomass samples, high duplication rates):
   - ⚠️ **Avoid abundance-based analyses** (relative abundance comparisons unreliable)
   - ⚠️ **Use presence/absence methods** instead of abundance-weighted metrics
   - ⚠️ **Focus on diversity rather than composition**
@@ -484,6 +518,7 @@ blastn -query assembly.fasta -db viral_refseq -outfmt 6 -max_target_seqs 5
 
 - **VLP/viral data showing unusual patterns**:
   - ✓ **Expected**: Higher variability, lower similarity between samples
+  - ✓ **Check your protocol**: How many PCR cycles were used? VLP preps often require 25-35+ cycles
   - ✓ **Check duplication rates** in FastQC (>50% may indicate PCR bias)
   - ✓ **Consider individual assembly** even with moderate sample numbers
   - ✓ **Use presence/absence for community comparisons**
@@ -558,7 +593,7 @@ python scripts/recommend_strategy.py --distances distances.csv --metadata metada
 python preprocess_samples.py --input-dir . --light-filtering --viral-optimized
 
 # ⚠️ IMPORTANT: For VLP data, assess PCR bias first
-# VLP preparations often have PCR bias due to low starting material
+# VLP preparations often require many PCR cycles (25-35+) due to low starting DNA yield
 
 # Generate distance matrix with presence/absence focus (if PCR bias suspected)
 python scripts/distance_sourmash.py --input-dir preprocessed/ --output distances.csv --viral-mode --presence-absence
