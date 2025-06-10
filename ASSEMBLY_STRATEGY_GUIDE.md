@@ -13,40 +13,109 @@ This guide provides a structured decision-making process to help researchers cho
 
 ## Decision Tree Framework
 
-### STEP 1: Data Inventory & Quality Check
+### STEP 1: Data Type and Preparation Assessment
 
-**Quick file assessment (5-10 minutes):**
+**Determine your data characteristics (2-3 minutes):**
 
+1. **What type of metagenomic preparation was used?**
+   - **Standard total DNA** → Bacterial/archaeal dominant communities
+   - **VLP (virus-like particle) enriched** → Viral-enriched samples
+   - **Host-associated** (gut, skin, oral) → Variable host contamination
+   - **Environmental** (soil, water, sediment) → High complexity expected
+   - **Other specialized prep** → May need custom approach
+
+2. **Expected community composition:**
+   - **Mixed prokaryotic** → Standard workflow
+   - **Viral-dominant** → Modified workflow (see VLP-specific guidance)
+   - **Host-contaminated** → Emphasize decontamination steps
+   - **Unknown/exploratory** → Use conservative, robust approaches
+
+### STEP 2: Data Quality and Preprocessing
+
+**Essential preprocessing steps (30-90 minutes depending on dataset size):**
+
+#### 2A: Quality Assessment and Filtering
 ```bash
-# Count total samples
-find . -name "*.fastq*" | wc -l
+# Check raw read quality
+fastqc *.fastq* -o qc_reports/
 
-# Check file sizes (depth estimation)
-ls -lh *.fastq* | head -10
-
-# Verify read types
-zcat sample.fastq.gz | head -8  # Check for paired-end format
+# Quality trimming (if needed)
+trimmomatic PE sample_R1.fastq sample_R2.fastq \
+  sample_R1_clean.fastq sample_R1_unpaired.fastq \
+  sample_R2_clean.fastq sample_R2_unpaired.fastq \
+  ILLUMINACLIP:adapters.fa:2:30:10 LEADING:3 TRAILING:3 SLIDINGWINDOW:4:15 MINLEN:36
 ```
 
-**Decision Points:**
+#### 2B: Host Contamination Removal (if applicable)
+**For host-associated samples:**
+```bash
+# Remove host sequences
+bowtie2 --very-sensitive-local -x host_genome -1 sample_R1.fastq -2 sample_R2.fastq \
+  --un-conc sample_dehost.fastq
 
+# For unknown host contamination, use k-mer based methods
+kraken2 --db standard sample.fastq --unclassified-out sample_microbial.fastq
+```
+
+**For VLP/viral-enriched samples:**
+- Host removal usually minimal or unnecessary
+- Focus on removing residual bacterial contamination if needed
+
+#### 2C: Sequencing Depth Normalization
+**Choose normalization approach:**
+```bash
+# Option 1: Subsampling to minimum depth (fastest)
+seqtk sample -s 100 sample.fastq 1000000 > sample_subsample.fastq
+
+# Option 2: Using existing toolkit
+python core/normalization.py --method scaling --input sample_counts.csv --output normalized_counts.csv
+```
+
+#### 2D: Final Quality Check
+```bash
+# Basic file inventory after preprocessing
+find . -name "*_clean.fastq*" | wc -l
+ls -lh *_clean.fastq* | head -10
+
+# Verify read counts are reasonable
+for file in *_clean.fastq*; do
+  echo "$file: $(wc -l < $file | awk '{print $1/4}')"
+done
+```
+
+### STEP 3: Sample Count and Depth Assessment
+
+**Decision Points (adjust based on data type):**
+
+#### For Standard Metagenomic Data:
 1. **Sample Count Assessment**
    - **< 3 samples** → **Individual Assembly Only**
    - **3-10 samples** → Limited grouping options available
    - **> 10 samples** → Full range of strategies available
 
-2. **Sequencing Depth per Sample**
+2. **Sequencing Depth per Sample (after preprocessing)**
    - **> 20M reads/sample** → Individual assembly viable
    - **5-20M reads/sample** → Evaluate co-assembly benefits
    - **< 5M reads/sample** → Co-assembly likely necessary
 
-3. **Read Type Considerations**
+#### For VLP/Viral-Enriched Data:
+1. **Sample Count Assessment**
+   - **< 5 samples** → Individual assembly often sufficient (lower complexity)
+   - **5-15 samples** → Consider metadata-guided grouping
+   - **> 15 samples** → Full range of strategies available
+
+2. **Sequencing Depth per Sample**
+   - **> 10M reads/sample** → Individual assembly often viable (viral genomes shorter)
+   - **2-10M reads/sample** → Evaluate co-assembly for rare virus recovery
+   - **< 2M reads/sample** → Co-assembly recommended
+
+3. **Read Type Considerations (both data types)**
    - **Single-end reads** → Co-assembly preferred (assembly challenges)
    - **Paired-end reads** → All strategies viable
    - **Long reads (ONT/PacBio)** → Different workflow entirely
    - **Read length < 100bp** → Co-assembly recommended
 
-### STEP 2: Community Structure Assessment
+### STEP 4: Community Structure Assessment
 
 **Choose your assessment approach based on available resources:**
 
@@ -57,12 +126,19 @@ Answer based on your experimental design:
    - YES (same body site, similar soil types) → Consider co-assembly
    - NO (gut vs soil, different hosts) → Individual assembly
 
-2. **Do you expect shared species between samples?**
+2. **Do you expect shared species/organisms between samples?**
    - YES → Co-assembly beneficial
    - NO → Individual assembly
    - UNSURE → Default to co-assembly (safer for discovery)
 
+**Data type considerations:**
+- **VLP data**: Higher chance of shared viral families between similar environments
+- **Host-associated**: Strong host effect usually means shared taxa
+- **Environmental**: Geographic/temporal proximity increases sharing likelihood
+
 #### Option B: Rapid Computational Assessment (30-60 minutes)
+**IMPORTANT: Use preprocessed, normalized data from Step 2**
+
 Choose one of these distance matrix approaches:
 
 **Fast Sketching Approach (Recommended for >50 samples):**
@@ -91,35 +167,40 @@ for sample in *.fastq*; do
 done
 ```
 
-**Similarity Interpretation:**
+**Similarity Interpretation (adjust thresholds based on data type):**
+
+**For Standard Metagenomic Data:**
 - **High similarity** (Bray-Curtis < 0.5) → Co-assembly beneficial
 - **Moderate similarity** (Bray-Curtis 0.5-0.8) → Evaluate metadata grouping
 - **Low similarity** (Bray-Curtis > 0.8) → Individual assembly preferred
 
-### STEP 3: Metadata Variable Selection (If Co-Assembly Chosen)
+**For VLP/Viral-Enriched Data:**
+- **High similarity** (Bray-Curtis < 0.3) → Co-assembly beneficial (viruses more variable)
+- **Moderate similarity** (Bray-Curtis 0.3-0.7) → Evaluate metadata grouping
+- **Low similarity** (Bray-Curtis > 0.7) → Individual assembly preferred
 
-#### 3A: Biological Relevance Assessment
+### STEP 5: Metadata Variable Selection (If Co-Assembly Chosen)
 
-**Rank metadata variables by expected microbial community effect:**
+#### 5A: Biological Relevance Assessment
 
-**High biological relevance:**
-- Treatment vs control (drugs, interventions)
-- Disease state (healthy vs diseased)
-- Body site (gut vs oral vs skin)
-- Environmental conditions (pH, temperature, salinity)
-- Host species
+**Rank metadata variables by expected community effect (adjust by data type):**
 
-**Medium biological relevance:**
-- Time points (acute vs chronic effects)
-- Geographic location (if environmentally distinct)
-- Demographic variables (age, sex - context dependent)
+**For Standard Metagenomic Data:**
+- **High relevance**: Treatment vs control, disease state, body site, environmental conditions, host species
+- **Medium relevance**: Time points, geographic location, demographic variables
+- **Low relevance**: Technical variables, random identifiers
 
-**Low biological relevance:**
-- Technical variables (batch, extraction kit)
-- Random identifiers
-- Variables with minimal biological basis
+**For VLP/Viral-Enriched Data:**
+- **High relevance**: Host species, body site, disease state, antiviral treatments, immune status
+- **Medium relevance**: Time points (viral dynamics faster), geographic location, environmental stressors
+- **Low relevance**: Most demographic variables (unless immune-related), dietary factors
 
-#### 3B: Statistical Validation (If computational assessment was performed)
+**Additional VLP considerations:**
+- Seasonal effects may be stronger for environmental viruses
+- Treatment effects may be more pronounced (direct antiviral action)
+- Host immunity variables become critical
+
+#### 5B: Statistical Validation (If computational assessment was performed)
 
 **PERMANOVA Testing:**
 ```r
@@ -148,21 +229,24 @@ ggplot(plot_data, aes(x=PC1, y=PC2, color=treatment)) +
   geom_point(size=3) + theme_minimal()
 ```
 
-#### 3C: Grouping Strategy Selection
+#### 5C: Grouping Strategy Selection
 
-**Sample Size Requirements:**
-- Each group needs ≥ 3 samples (preferably ≥ 5)
-- If groups have < 3 samples, consider combining categories or using similarity-based grouping
+**Sample Size Requirements (adjust by data type):**
+- **Standard metagenomic**: Each group needs ≥ 3 samples (preferably ≥ 5)
+- **VLP/viral-enriched**: Each group needs ≥ 2 samples (lower complexity allows smaller groups)
+- If groups are too small, consider combining categories or using similarity-based grouping
 
 **Decision Logic:**
-1. **Single strong variable** (R² > 0.15) → Use metadata-guided grouping
+1. **Single strong variable** (R² > 0.15 standard, R² > 0.10 for VLP) → Use metadata-guided grouping
 2. **Multiple moderate variables** → Test combinations
 3. **No strong variables** (all R² < 0.05) → Use similarity-based grouping
 4. **Technical confounding detected** → Address before proceeding
 
-### STEP 4: Final Assembly Strategy Selection
+### STEP 6: Final Assembly Strategy Selection
 
-## Decision Matrix
+## Decision Matrices
+
+### For Standard Metagenomic Data
 
 | Samples | Depth/Sample | Expected Similarity | Strong Metadata Effects | Recommended Strategy |
 |---------|-------------|---------------------|------------------------|---------------------|
@@ -170,11 +254,30 @@ ggplot(plot_data, aes(x=PC1, y=PC2, color=treatment)) +
 | 3+ | High (>20M) | Low (BC > 0.8) | Any | Individual Assembly |
 | 3+ | High (>20M) | High (BC < 0.5) | Yes (R² > 0.15) | Metadata-Guided Co-Assembly |
 | 3+ | High (>20M) | High (BC < 0.5) | No (R² < 0.05) | Similarity-Based Co-Assembly |
-| 3+ | Medium (5-20M) | Moderate (BC 0.5-0.8) | Yes | Metadata-Guided Co-Assembly |
-| 3+ | Medium (5-20M) | Moderate (BC 0.5-0.8) | No | Similarity-Based Co-Assembly |
+| 3+ | Medium (5-20M) | Moderate (BC 0.5-0.8) | Yes (R² > 0.15) | Metadata-Guided Co-Assembly |
+| 3+ | Medium (5-20M) | Moderate (BC 0.5-0.8) | No (R² < 0.05) | Similarity-Based Co-Assembly |
 | 3+ | Low (<5M) | Any | Any | Pooled Co-Assembly |
 
+### For VLP/Viral-Enriched Data
+
+| Samples | Depth/Sample | Expected Similarity | Strong Metadata Effects | Recommended Strategy |
+|---------|-------------|---------------------|------------------------|---------------------|
+| < 2 | Any | Any | N/A | Individual Assembly |
+| 2-4 | High (>10M) | Low (BC > 0.7) | Any | Individual Assembly |
+| 2-4 | High (>10M) | High (BC < 0.3) | Yes (R² > 0.10) | Metadata-Guided Co-Assembly |
+| 5+ | High (>10M) | High (BC < 0.3) | Yes (R² > 0.10) | Metadata-Guided Co-Assembly |
+| 5+ | High (>10M) | High (BC < 0.3) | No (R² < 0.05) | Similarity-Based Co-Assembly |
+| 5+ | Medium (2-10M) | Moderate (BC 0.3-0.7) | Yes (R² > 0.10) | Metadata-Guided Co-Assembly |
+| 5+ | Medium (2-10M) | Moderate (BC 0.3-0.7) | No (R² < 0.05) | Similarity-Based Co-Assembly |
+| Any | Low (<2M) | Any | Any | Pooled Co-Assembly |
+
 *BC = Bray-Curtis distance; R² = PERMANOVA R-squared*
+
+**Key differences for VLP data:**
+- Lower depth thresholds (viral genomes are shorter)
+- Stricter similarity thresholds (viral communities more variable)
+- Lower R² thresholds for metadata effects (smaller effect sizes expected)
+- Smaller minimum group sizes acceptable
 
 ## Strategy Descriptions
 
@@ -281,25 +384,60 @@ scripts/pooled_assembly.py        # Single pooled assembly
 
 ## Validation and Quality Control
 
-After implementing your chosen strategy, validate results using:
+After implementing your chosen strategy, validate results using data-type appropriate methods:
 
-### Assembly Quality Metrics
+### Standard Metagenomic Data Quality Metrics
 ```bash
 # Basic assembly statistics
 assembly-stats assembly.fasta
 
-# Genome completeness assessment  
+# Bacterial/archaeal genome completeness assessment
 checkm lineage_wf bins_folder checkm_output -t 8 -x fa
 
 # Functional gene recovery
-prodigal -i assembly.fasta -a proteins.faa -d genes.fna
+prodigal -i assembly.fasta -a proteins.faa -d genes.fna -p meta
+
+# Taxonomic annotation
+kraken2 --db standard assembly.fasta > assembly_taxonomy.txt
 ```
+
+### VLP/Viral-Enriched Data Quality Metrics
+```bash
+# Basic assembly statistics (focus on shorter contigs)
+assembly-stats assembly.fasta
+
+# Viral genome completeness assessment
+checkv end_to_end assembly.fasta checkv_output
+
+# Viral gene prediction and annotation
+prodigal -i assembly.fasta -a viral_proteins.faa -d viral_genes.fna -p meta
+hmmsearch --domtblout viral_hallmarks.out viral_hallmark_genes.hmm viral_proteins.faa
+
+# Viral taxonomy (if available)
+# Note: Viral databases are less complete than bacterial
+blastn -query assembly.fasta -db viral_refseq -outfmt 6 -max_target_seqs 5
+```
+
+### Quality Thresholds by Data Type
+
+**Standard Metagenomic:**
+- Minimum contig length: 1000 bp
+- Genome completeness: >80% (CheckM)
+- Contamination: <10% (CheckM)
+- N50: >10 kb (for complex communities)
+
+**VLP/Viral-Enriched:**
+- Minimum contig length: 500 bp (viral genomes shorter)
+- Genome completeness: >70% (CheckV, when applicable)
+- Contamination: <5% host sequences
+- N50: >2 kb (viral genomes naturally shorter)
 
 ### Comparative Assessment
 - Compare assembly statistics between strategies tested
-- Evaluate genome recovery rates
+- Evaluate genome/viral recovery rates
 - Assess functional gene completeness
 - Document computational resource usage
+- **For VLP**: Focus on recovery of viral hallmark genes and diversity metrics
 
 ## Troubleshooting
 
@@ -340,26 +478,46 @@ This decision framework integrates with:
 
 ### Minimal Assessment (5 minutes)
 ```bash
-# Count samples and estimate depth
+# Step 1: Determine data type and count samples
+echo "Data type: [standard|VLP|host-associated|environmental]"
 find . -name "*.fastq*" | wc -l
 ls -lh *.fastq* | head -5
 
-# Make decision based on biological knowledge
-# < 3 samples → Individual assembly
+# Step 2: Make decision based on biological knowledge and data type
+# Standard metagenomic: < 3 samples → Individual assembly
+# VLP data: < 2 samples → Individual assembly  
 # Different environments → Individual assembly  
 # Similar environments → Co-assembly
 ```
 
-### Computational Assessment (30-60 minutes)
+### Standard Metagenomic Workflow (60-90 minutes)
 ```bash
-# Generate distance matrix (choose one approach)
-python scripts/distance_sourmash.py --input-dir . --output distances.csv
+# Preprocessing with host removal
+python preprocess_samples.py --input-dir . --remove-host --host-db human_genome
+
+# Generate distance matrix
+python scripts/distance_kmer.py --input-dir preprocessed/ --output distances.csv
 
 # Analyze metadata effects
 python scripts/analyze_metadata.py --distances distances.csv --metadata metadata.csv
 
-# Generate grouping recommendations
+# Generate grouping recommendations  
 python scripts/recommend_strategy.py --distances distances.csv --metadata metadata.csv
+```
+
+### VLP/Viral-Enriched Workflow (30-60 minutes)
+```bash
+# Lighter preprocessing (minimal host removal)
+python preprocess_samples.py --input-dir . --light-filtering --viral-optimized
+
+# Generate distance matrix with viral-appropriate thresholds
+python scripts/distance_sourmash.py --input-dir preprocessed/ --output distances.csv --viral-mode
+
+# Analyze metadata effects with adjusted thresholds
+python scripts/analyze_metadata.py --distances distances.csv --metadata metadata.csv --viral-thresholds
+
+# Generate grouping recommendations
+python scripts/recommend_strategy.py --distances distances.csv --metadata metadata.csv --data-type viral
 ```
 
 ### Full Analysis Pipeline
@@ -369,6 +527,7 @@ python assembly_strategy_optimizer.py \
   --samples samples.txt \
   --metadata metadata.csv \
   --output results/ \
+  --data-type [standard|viral] \
   --distance-method kmer \
   --validate-groupings \
   --generate-report
