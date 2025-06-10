@@ -30,6 +30,12 @@ This guide provides a structured decision-making process to help researchers cho
    - **Host-contaminated** → Emphasize decontamination steps
    - **Unknown/exploratory** → Use conservative, robust approaches
 
+3. **PCR amplification bias risk assessment:**
+   - **High risk**: VLP preparations, low biomass samples, environmental DNA, ancient DNA
+   - **Medium risk**: Host-associated samples with low microbial load
+   - **Low risk**: High biomass samples (fecal, soil), minimal PCR cycles used
+   - **Unknown**: Check FastQC duplication rates and GC distribution
+
 ### STEP 2: Data Quality and Preprocessing
 
 **Essential preprocessing steps (30-90 minutes depending on dataset size):**
@@ -40,10 +46,9 @@ This guide provides a structured decision-making process to help researchers cho
 fastqc *.fastq* -o qc_reports/
 
 # Quality trimming (if needed)
-trimmomatic PE sample_R1.fastq sample_R2.fastq \
-  sample_R1_clean.fastq sample_R1_unpaired.fastq \
-  sample_R2_clean.fastq sample_R2_unpaired.fastq \
-  ILLUMINACLIP:adapters.fa:2:30:10 LEADING:3 TRAILING:3 SLIDINGWINDOW:4:15 MINLEN:36
+fastp -i sample_R1.fastq -I sample_R2.fastq \
+  -o sample_R1_clean.fastq -O sample_R2_clean.fastq \
+  --detect_adapter_for_pe --cut_tail --cut_tail_window_size 4 --cut_tail_mean_quality 20
 ```
 
 #### 2B: Host Contamination Removal (if applicable)
@@ -61,14 +66,34 @@ kraken2 --db standard sample.fastq --unclassified-out sample_microbial.fastq
 - Host removal usually minimal or unnecessary
 - Focus on removing residual bacterial contamination if needed
 
-#### 2C: Sequencing Depth Normalization
+#### 2C: Sequencing Depth Normalization and Bias Assessment
+
+**First, assess for PCR amplification bias:**
+```bash
+# Check for potential PCR bias indicators
+fastqc *.fastq* -o qc_reports/
+# Look for: unusual GC distribution, high duplication rates, uneven coverage
+
+# For VLP/viral data, PCR bias is common due to low starting material
+```
+
+**Important PCR Bias Considerations:**
+- **If PCR bias is suspected or known** (e.g., VLP preparations, low biomass samples):
+  - ⚠️ **Avoid abundance-based analyses** (relative abundance comparisons unreliable)
+  - ⚠️ **Use presence/absence methods** instead of abundance-weighted metrics
+  - ⚠️ **Focus on diversity rather than composition**
+  - ⚠️ **Be cautious with quantitative conclusions**
+
 **Choose normalization approach:**
 ```bash
-# Option 1: Subsampling to minimum depth (fastest)
+# Option 1: Subsampling to minimum depth (recommended for PCR bias)
 seqtk sample -s 100 sample.fastq 1000000 > sample_subsample.fastq
 
-# Option 2: Using existing toolkit
+# Option 2: Scaling (only if no suspected PCR bias)
 python core/normalization.py --method scaling --input sample_counts.csv --output normalized_counts.csv
+
+# Option 3: For PCR-biased data, use presence/absence normalization
+python core/normalization.py --method binary --input sample_counts.csv --output binary_counts.csv
 ```
 
 #### 2D: Final Quality Check
@@ -155,16 +180,24 @@ sourmash compare *.sig -o distance_matrix.csv
 from core.kmer_distance import KmerDistanceCalculator
 calc = KmerDistanceCalculator(k=21, canonical=True)
 profiles = {sample: calc.calculate_kmer_profile(sample) for sample in samples}
-distance_matrix = calc.calculate_pairwise_distances(profiles, 'bray_curtis')
+
+# Choose distance metric based on PCR bias status
+if pcr_bias_suspected:
+    distance_matrix = calc.calculate_pairwise_distances(profiles, 'jaccard')  # Presence/absence
+else:
+    distance_matrix = calc.calculate_pairwise_distances(profiles, 'bray_curtis')  # Abundance-weighted
 ```
 
-**Taxonomic Profile Approach (Most interpretable):**
+**Taxonomic Profile Approach (Most interpretable, but abundance-sensitive):**
 ```bash
 # Kraken2 classification
 for sample in *.fastq*; do
     kraken2 --db standard --threads 4 $sample > ${sample}.kraken
     bracken -d standard -i ${sample}.kraken -o ${sample}.bracken
 done
+
+# ⚠️ WARNING: If PCR bias suspected, taxonomic abundance profiles may be unreliable
+# Consider using presence/absence of taxa instead of relative abundances
 ```
 
 **Similarity Interpretation (adjust thresholds based on data type):**
@@ -441,10 +474,24 @@ blastn -query assembly.fasta -db viral_refseq -outfmt 6 -max_target_seqs 5
 
 ## Troubleshooting
 
+### PCR Amplification Bias Issues
+- **Suspected PCR bias in data**:
+  - ✓ **Switch to presence/absence metrics** (Jaccard instead of Bray-Curtis)
+  - ✓ **Avoid quantitative abundance conclusions**
+  - ✓ **Focus on diversity and presence patterns rather than relative abundances**
+  - ✓ **Use binary normalization methods**
+  - ✓ **Be conservative in statistical interpretations**
+
+- **VLP/viral data showing unusual patterns**:
+  - ✓ **Expected**: Higher variability, lower similarity between samples
+  - ✓ **Check duplication rates** in FastQC (>50% may indicate PCR bias)
+  - ✓ **Consider individual assembly** even with moderate sample numbers
+  - ✓ **Use presence/absence for community comparisons**
+
 ### Unexpected Results
 - **High depth but poor assembly**: Check for host contamination or low complexity
-- **Metadata grouping doesn't match similarity**: Consider batch effects or technical confounding
-- **Poor rare organism recovery**: Try increasing co-assembly group sizes
+- **Metadata grouping doesn't match similarity**: Consider batch effects, technical confounding, or PCR bias
+- **Poor rare organism recovery**: Try increasing co-assembly group sizes (but be cautious if PCR bias present)
 
 ### Computational Issues
 - **High memory usage**: Use smaller k-mer sizes or subsample reads
@@ -453,8 +500,8 @@ blastn -query assembly.fasta -db viral_refseq -outfmt 6 -max_target_seqs 5
 
 ### Biological Interpretation
 - **Groups don't make biological sense**: Prioritize biological relevance over statistical significance
-- **Conflicting metadata effects**: Consider interaction effects or hierarchical grouping
-- **Technical batch effects**: Use batch correction methods before grouping
+- **Conflicting metadata effects**: Consider interaction effects, hierarchical grouping, or PCR bias artifacts
+- **Technical batch effects**: Use batch correction methods before grouping, check for PCR bias
 
 ## Best Practices
 
@@ -510,14 +557,17 @@ python scripts/recommend_strategy.py --distances distances.csv --metadata metada
 # Lighter preprocessing (minimal host removal)
 python preprocess_samples.py --input-dir . --light-filtering --viral-optimized
 
-# Generate distance matrix with viral-appropriate thresholds
-python scripts/distance_sourmash.py --input-dir preprocessed/ --output distances.csv --viral-mode
+# ⚠️ IMPORTANT: For VLP data, assess PCR bias first
+# VLP preparations often have PCR bias due to low starting material
 
-# Analyze metadata effects with adjusted thresholds
-python scripts/analyze_metadata.py --distances distances.csv --metadata metadata.csv --viral-thresholds
+# Generate distance matrix with presence/absence focus (if PCR bias suspected)
+python scripts/distance_sourmash.py --input-dir preprocessed/ --output distances.csv --viral-mode --presence-absence
+
+# Analyze metadata effects with adjusted thresholds and bias-aware methods
+python scripts/analyze_metadata.py --distances distances.csv --metadata metadata.csv --viral-thresholds --pcr-bias-mode
 
 # Generate grouping recommendations
-python scripts/recommend_strategy.py --distances distances.csv --metadata metadata.csv --data-type viral
+python scripts/recommend_strategy.py --distances distances.csv --metadata metadata.csv --data-type viral --pcr-bias-aware
 ```
 
 ### Full Analysis Pipeline
