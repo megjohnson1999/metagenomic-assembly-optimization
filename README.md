@@ -10,19 +10,20 @@ This repository provides tools and standardized approaches for optimizing metage
 
 ### Current Implementation
 
+- **Assembly Strategy Decision Framework**: Systematic decision trees for selecting optimal assembly approaches
 - **K-mer Based Distance Calculation**: Calculate sequence similarity between samples using k-mer profiles
 - **Metadata Correlation Analysis**: Test correlations between metadata variables and sequence similarity
 - **Grouping Optimization**: Generate and evaluate sample groupings based on metadata or clustering
+- **Multiple Distance Matrix Methods**: Sourmash, k-mer profiles, and taxonomic profiling approaches
+- **Scientific Validity Checks**: Bias correction, compositional data handling, and confounding detection
 - **Visualization and Reporting**: Generate comprehensive visualizations and HTML reports
 - **Assembly Strategy Recommendation**: Data-driven recommendations for assembly approach
 
-### Planned Features
+### Documentation
 
-- SOP Documentation for systematic assembly optimization
-- Dataset characterization tools
-- Assembly strategy comparison scripts
-- Assembly validation tools
-- Utility scripts for file conversion and resource estimation
+- **[Assembly Strategy Decision Tree Guide](ASSEMBLY_STRATEGY_GUIDE.md)**: Comprehensive framework for selecting assembly strategies
+- **[Scientific Validity Guide](SCIENTIFIC_VALIDITY_GUIDE.md)**: Enhanced scientific validity features and bias correction methods
+- **[Bias Correction Guide](BIAS_CORRECTION_README.md)**: Detailed information on bias assessment and correction
 
 ## Installation
 
@@ -40,6 +41,14 @@ pip install -e .
 
 ## Quick Start
 
+### Assembly Strategy Selection
+
+**Start with the decision framework to choose your assembly approach:**
+
+1. **Read the [Assembly Strategy Decision Tree Guide](ASSEMBLY_STRATEGY_GUIDE.md)** for systematic strategy selection
+2. **Use the decision framework** to determine optimal assembly approach based on your data
+3. **Run the appropriate analysis** based on your chosen strategy
+
 ### Basic Usage
 
 ```bash
@@ -48,6 +57,15 @@ python sample_grouping_analysis.py \
     -s samples.txt \
     -m metadata.csv \
     -o results/
+
+# Run with scientific validity checks (recommended)
+python scientific_grouping_analysis.py \
+    --samples samples.txt \
+    --metadata metadata.csv \
+    --output results/ \
+    --normalize-depth \
+    --handle-compositional \
+    --detect-confounding
 ```
 
 ### Input Files
